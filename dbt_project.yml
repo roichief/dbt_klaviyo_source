@@ -24,5 +24,7 @@ packages-install-path: "dbt_packages"
 models:
   +materialized: table
   +schema: stg_klaviyo
-  klaviyo_source:
+  klaviyo_source_custom:
     +schema: stg_klaviyo
+  klaviyo_source:  # Disable original Fivetran package
+    +enabled: false
