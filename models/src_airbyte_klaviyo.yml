@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: klaviyo_source
+    database: 0006_wonsulting # your catalog
+    schema: klaviyo_raw      # your Airbyte ingestion schema
+    tables:
+      - name: campaigns
+        identifier: airbyte_campaigns
+      - name: events
+        identifier: airbyte_events
+      - name: flows
+        identifier: airbyte_flows
+      - name: lists
+        identifier: airbyte_lists
+      - name: metrics
+        identifier: airbyte_metrics
