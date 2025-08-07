@@ -23,5 +23,6 @@ packages-install-path: "dbt_packages"
 
 models:
   +materialized: table
+  +schema: stg_klaviyo
   klaviyo_source:
     +schema: stg_klaviyo
