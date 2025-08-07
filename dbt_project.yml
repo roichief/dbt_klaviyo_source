@@ -1,4 +1,4 @@
-name: 'klaviyo_source'
+name: 'klaviyo_source_custom'
 version: '0.8.0'
 config-version: 2
 require-dbt-version: [">=1.0.0", "<2.0.0"]
