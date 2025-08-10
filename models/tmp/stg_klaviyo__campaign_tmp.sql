@@ -7,7 +7,9 @@ select
   relationships,
   cast(updated_at as timestamp) as updated,
   cast(get_json_object(attributes, '$.created_at') as timestamp) as created,
-
+  try_cast(campaign_messages as string) as campaign_messages,
+  try_cast(estimated_recipient_count as bigint) as estimated_recipient_count,
+  
   -- Airbyte system columns, preserved
   _airbyte_raw_id,
   _airbyte_extracted_at as _fivetran_synced,
