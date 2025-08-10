@@ -6,7 +6,7 @@ require-dbt-version: [">=1.0.0", "<2.0.0"]
 
 vars:
   klaviyo_source:
-    klaviyo_database: 0006_wonsulting
+    klaviyo_database: 0006_wsg
     klaviyo_schema: klaviyo_raw
     klaviyo__event_pass_through_columns: []
     klaviyo__person_pass_through_columns: []

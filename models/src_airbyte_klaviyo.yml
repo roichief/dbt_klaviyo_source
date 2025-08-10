@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: klaviyo_source
-    database: 0006_wonsulting # your catalog
+    database: 0006_wsg # your catalog
     schema: klaviyo_raw      # your Airbyte ingestion schema
     tables:
       - name: campaigns
