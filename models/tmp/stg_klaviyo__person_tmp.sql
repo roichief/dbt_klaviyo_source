@@ -9,7 +9,8 @@ select
   cast(get_json_object(attributes, '$.created') as timestamp) as created,
   get_json_object(attributes, '$.email')         as email,
   get_json_object(attributes, '$.phone_number')  as phone_number,
-
+  try_cast(segments as string) as segments, 
+  
   _airbyte_raw_id,
   _airbyte_extracted_at as _fivetran_synced,
   _airbyte_meta,
