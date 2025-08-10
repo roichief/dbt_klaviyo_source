@@ -53,7 +53,7 @@ parsed as (
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',
          union_database_variable = 'klaviyo_union_databases'
-    ) }} as source_relation
+    ) }}
   from base
 ),
 
