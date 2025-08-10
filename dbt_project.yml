@@ -16,7 +16,7 @@ vars:
   # Airbyte table names (override here if yours differ)
   klaviyo_event_identifier: events
   klaviyo_person_identifier: profiles
-  klaviyo_campaign_identifier: campaigns
+  klaviyo_campaign_identifier: campaigns_detailed
   klaviyo_flow_identifier: flows
   klaviyo_metric_identifier: metrics
   klaviyo_list_identifier: lists
