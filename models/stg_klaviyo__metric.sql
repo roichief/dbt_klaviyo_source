@@ -1,9 +1,6 @@
--- Airbyte → parse JSON → expose columns expected by Fivetran transform package.
-
 with base as (
   select * from {{ ref('stg_klaviyo__metric_tmp') }}
 ),
-
 parsed as (
   select
     id,
@@ -13,18 +10,14 @@ parsed as (
     get_json_object(attributes, '$.integration.id')            as integration_id,
     get_json_object(attributes, '$.integration.name')          as integration_name,
     get_json_object(attributes, '$.integration.category')      as integration_category,
-
-    -- system / compat
     cast(_airbyte_extracted_at as {{ dbt.type_timestamp() }}) as _fivetran_synced,
-    false as _fivetran_deleted,
-
+    false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',
          union_database_variable = 'klaviyo_union_databases'
     ) }}
   from base
 )
-
 select 
   created as created_at,
   cast(id as {{ dbt.type_string() }})             as metric_id,

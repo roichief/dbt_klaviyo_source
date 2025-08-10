@@ -1,41 +1,30 @@
--- Airbyte → parse JSON → expose columns expected by Fivetran transform package.
-
 with base as (
   select * from {{ ref('stg_klaviyo__campaign_tmp') }}
 ),
-
 attrs as (
   select
     id,
-    -- attributes (JSON string)
     get_json_object(attributes, '$.name')         as name,
     get_json_object(attributes, '$.status')       as status,
     get_json_object(attributes, '$.send_time')    as send_time,
     get_json_object(attributes, '$.archived')     as archived,
     get_json_object(attributes, '$.scheduled_at') as scheduled,
-    -- normalized timestamps carried from _tmp
     created,
     updated,
-    -- extra
     estimated_recipient_count,
     campaign_messages,
-    -- system
     cast(_fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
     _airbyte_raw_id,
     _airbyte_meta,
     _airbyte_generation_id,
-    -- Airbyte has no soft deletes; keep compatible column
-    false as _fivetran_deleted,
-    -- keep for unioning
+    false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',
          union_database_variable = 'klaviyo_union_databases'
     ) }}
   from base
 ),
-
 messages as (
-  -- Parse and explode the first campaign message (if any)
   select
     a.id as campaign_id,
     m.attributes.content.subject            as subject,
@@ -77,7 +66,6 @@ messages as (
     )
   ) m
 ),
-
 messages_dedup as (
   select *
   from (
@@ -88,24 +76,22 @@ messages_dedup as (
   ) t
   where rn = 1
 )
-
 select
-  -- optional fields Fivetran sometimes includes
-  cast(null as {{ dbt.type_string() }})               as campaign_type,
-  cast(a.created as {{ dbt.type_timestamp() }})       as created_at,
+  cast(null as {{ dbt.type_string() }})         as campaign_type,
+  cast(a.created as {{ dbt.type_timestamp() }}) as created_at,
   md.email_template_id,
   md.from_email,
   md.from_name,
-  cast(a.id as {{ dbt.type_string() }})               as campaign_id,
-  a.name                                              as campaign_name,
-  a.send_time                                         as scheduled_to_send_at,
+  cast(a.id as {{ dbt.type_string() }})         as campaign_id,
+  a.name                                        as campaign_name,
+  a.send_time                                   as scheduled_to_send_at,
   md.sent_at,
-  coalesce(a.status, lower(null))                     as status,
-  cast(null as {{ dbt.type_string() }})               as status_id,
+  coalesce(a.status, lower(null))               as status,
+  cast(null as {{ dbt.type_string() }})         as status_id,
   md.subject,
-  cast(a.updated as {{ dbt.type_timestamp() }})       as updated_at,
-  try_cast(a.archived as boolean)                     as is_archived,
-  a.scheduled                                         as scheduled_at,
+  cast(a.updated as {{ dbt.type_timestamp() }}) as updated_at,
+  try_cast(a.archived as boolean)               as is_archived,
+  a.scheduled                                   as scheduled_at,
   a.source_relation
 from attrs a
 left join messages_dedup md
