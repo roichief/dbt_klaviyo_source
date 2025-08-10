@@ -2,8 +2,8 @@ version: 2
 
 sources:
   - name: klaviyo_source
-    database: "{{ var('klaviyo_database') }}"   # 0006_wsg
-    schema: "{{ var('klaviyo_schema') }}"       # klaviyo_raw
+    database: "{{ var('klaviyo_source_database') }}"
+    schema: "{{ var('klaviyo_source_schema') }}"
     tables:
       - name: campaigns
         identifier: "{{ var('klaviyo_campaign_identifier', 'campaigns') }}"
@@ -13,7 +13,7 @@ sources:
         identifier: "{{ var('klaviyo_flow_identifier', 'flows') }}"
       - name: metrics
         identifier: "{{ var('klaviyo_metric_identifier', 'metrics') }}"
-      - name: profiles          # <-- this was missing
+      - name: profiles
         identifier: "{{ var('klaviyo_person_identifier', 'profiles') }}"
       - name: lists
         identifier: "{{ var('klaviyo_list_identifier', 'lists') }}"

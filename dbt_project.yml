@@ -1,4 +1,4 @@
-name: 'klaviyo_source'         # <— IMPORTANT: match upstream package name
+name: 'klaviyo_source'
 profile: 'databricks'
 version: '0.9.0'
 config-version: 2
@@ -9,17 +9,17 @@ dispatch:
     search_order: ['spark_utils', 'dbt_utils']
 
 vars:
-  klaviyo_database: 0006_wsg
-  klaviyo_schema: klaviyo_raw
+  # namespaced so the root project's klaviyo_schema doesn't overwrite these
+  klaviyo_source_database: 0006_wsg
+  klaviyo_source_schema: klaviyo_raw
 
-  # Map to your Airbyte tables (singular var names)
+  # Airbyte table names (override here if yours differ)
   klaviyo_event_identifier: events
   klaviyo_person_identifier: profiles
   klaviyo_campaign_identifier: campaigns
   klaviyo_flow_identifier: flows
   klaviyo_metric_identifier: metrics
   klaviyo_list_identifier: lists
-  # integration may not exist in Airbyte; ok to leave unmapped or empty
 
   klaviyo__event_pass_through_columns: []
   klaviyo__person_pass_through_columns: []
@@ -30,5 +30,4 @@ packages-install-path: "dbt_packages"
 models:
   +materialized: table
   klaviyo_source:
-    +schema: default_stg_klaviyo
-
+    +schema: default_stg_klaviyo    # where *staging* outputs land
