@@ -6,7 +6,7 @@ sources:
     schema: "{{ var('klaviyo_source_schema') }}"
     tables:
       - name: campaigns
-        identifier: "{{ var('klaviyo_campaign_identifier', 'campaigns') }}"
+        identifier: "{{ var('klaviyo_campaign_identifier', 'campaigns_detailed') }}"
       - name: events
         identifier: "{{ var('klaviyo_event_identifier', 'events') }}"
       - name: flows

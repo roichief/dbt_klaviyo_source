@@ -23,4 +23,4 @@ select
 
   -- keep for compatibility with fivetran_utils.source_relation()
   cast('' as string) as source_relation
-from {{ source('klaviyo_source', 'campaigns_detailed') }}
+from {{ source('klaviyo_source', 'campaigns') }}
