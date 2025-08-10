@@ -1,29 +1,19 @@
-with base as (
-  select * from {{ ref('stg_klaviyo__campaign_tmp') }}
-),
-fields as (
-  select
-    {{
-      fivetran_utils.fill_staging_columns(
-        source_columns=adapter.get_columns_in_relation(ref('stg_klaviyo__campaign_tmp')),
-        staging_columns=get_campaign_columns()
-      )
-    }}
-    {{ fivetran_utils.source_relation('klaviyo_union_schemas','klaviyo_union_databases') }}
-  from base
-),
-final as (
-  select
-      cast(id as {{ dbt.type_string() }})                      as campaign_id,
-      cast(type as {{ dbt.type_string() }})                    as record_type,
-      links,
-      attributes,
-      created,
-      updated,
-      cast(get_json_object(attributes, '$.name') as {{ dbt.type_string() }})  as campaign_name,
-      cast(get_json_object(attributes, '$.status') as {{ dbt.type_string() }}) as campaign_status,
-      source_relation
-  from fields
-  where not coalesce(_fivetran_deleted, false)
-)
-select * from final
+-- Airbyte campaigns: updated_at exists (map to updated), created_at in attributes
+select
+  id,
+  type,
+  links,
+  attributes,
+  relationships,
+  cast(updated_at as timestamp) as updated,
+  cast(get_json_object(attributes, '$.created_at') as timestamp) as created,
+
+  -- Airbyte system columns, preserved
+  _airbyte_raw_id,
+  _airbyte_extracted_at as _fivetran_synced,
+  _airbyte_meta,
+  _airbyte_generation_id,
+
+  -- expected by downstream (harmless placeholder)
+  cast('' as string) as source_relation
+from {{ source('klaviyo_source', 'campaigns') }}

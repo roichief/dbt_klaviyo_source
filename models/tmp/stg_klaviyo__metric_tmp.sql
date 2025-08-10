@@ -1,31 +1,20 @@
-with base as (
-  select * from {{ ref('stg_klaviyo__metric_tmp') }}
-),
-fields as (
-  select
-    {{
-      fivetran_utils.fill_staging_columns(
-        source_columns=adapter.get_columns_in_relation(ref('stg_klaviyo__metric_tmp')),
-        staging_columns=get_metric_columns()
-      )
-    }}
-    {{ fivetran_utils.source_relation('klaviyo_union_schemas','klaviyo_union_databases') }}
-  from base
-),
-final as (
-  select
-      cast(id as {{ dbt.type_string() }})          as metric_id,
-      cast(type as {{ dbt.type_string() }})        as record_type,
-      links,
-      attributes,
-      created,
-      updated,
-      cast(integration_id as {{ dbt.type_string() }})       as integration_id,
-      cast(integration_name as {{ dbt.type_string() }})     as integration_name,
-      cast(integration_category as {{ dbt.type_string() }}) as integration_category,
-      cast(get_json_object(attributes, '$.name') as {{ dbt.type_string() }}) as metric_name,
-      source_relation
-  from fields
-  where not coalesce(_fivetran_deleted, false)
-)
-select * from final
+-- Airbyte metrics: top-level updated; integration details inside attributes
+select
+  id,
+  type,
+  links,
+  attributes,
+  relationships,
+  cast(get_json_object(attributes, '$.created') as timestamp) as created,
+  cast(updated as timestamp) as updated,
+  get_json_object(attributes, '$.integration.id')       as integration_id,
+  get_json_object(attributes, '$.integration.name')     as integration_name,
+  get_json_object(attributes, '$.integration.category') as integration_category,
+
+  _airbyte_raw_id,
+  _airbyte_extracted_at as _fivetran_synced,
+  _airbyte_meta,
+  _airbyte_generation_id,
+
+  cast('' as string) as source_relation
+from {{ source('klaviyo_source', 'metrics') }}

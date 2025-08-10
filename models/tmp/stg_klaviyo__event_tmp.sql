@@ -1,29 +1,18 @@
-with base as (
-  select * from {{ ref('stg_klaviyo__event_tmp') }}
-),
-fields as (
-  select
-    {{
-      fivetran_utils.fill_staging_columns(
-        source_columns=adapter.get_columns_in_relation(ref('stg_klaviyo__event_tmp')),
-        staging_columns=get_event_columns()
-      )
-    }}
-    {{ fivetran_utils.source_relation('klaviyo_union_schemas','klaviyo_union_databases') }}
-  from base
-),
-final as (
-  select
-      cast(id as {{ dbt.type_string() }})   as event_id,
-      cast(type as {{ dbt.type_string() }}) as record_type,
-      links,
-      attributes,
-      relationships,
-      datetime,
-      cast(metric_id as {{ dbt.type_string() }}) as metric_id,
-      cast(person_id as {{ dbt.type_string() }}) as person_id,
-      source_relation
-  from fields
-  where not coalesce(_fivetran_deleted, false)
-)
-select * from final
+-- Airbyte events: top-level datetime; metric/profile ids in relationships
+select
+  id,
+  type,
+  links,
+  attributes,
+  relationships,
+  cast(datetime as timestamp) as datetime,
+  get_json_object(relationships, '$.metric.data.id')  as metric_id,
+  get_json_object(relationships, '$.profile.data.id') as person_id,
+
+  _airbyte_raw_id,
+  _airbyte_extracted_at as _fivetran_synced,
+  _airbyte_meta,
+  _airbyte_generation_id,
+
+  cast('' as string) as source_relation
+from {{ source('klaviyo_source', 'events') }}
