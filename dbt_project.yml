@@ -1,38 +1,34 @@
-name: 'klaviyo_source_custom'
+name: 'klaviyo_source'         # <— IMPORTANT: match upstream package name
 profile: 'databricks'
 version: '0.9.0'
 config-version: 2
 require-dbt-version: [">=1.0.0", "<2.0.0"]
 
+dispatch:
+  - macro_namespace: dbt_utils
+    search_order: ['spark_utils', 'dbt_utils']
+
 vars:
-  # Where your raw Klaviyo data actually lives
   klaviyo_database: 0006_wsg
   klaviyo_schema: klaviyo_raw
 
-  # Map Fivetran's expected table names -> your Airbyte table names
+  # Map to your Airbyte tables (singular var names)
   klaviyo_event_identifier: events
   klaviyo_person_identifier: profiles
   klaviyo_campaign_identifier: campaigns
   klaviyo_flow_identifier: flows
   klaviyo_metric_identifier: metrics
-  klaviyo_integration_identifier: integration   # if you don’t have this table, it will build empty (that’s OK)
-  klaviyo_list_identifier: lists                # only used if/where referenced
+  klaviyo_list_identifier: lists
+  # integration may not exist in Airbyte; ok to leave unmapped or empty
 
-  # passthroughs (keep as-is if you don’t need them)
   klaviyo__event_pass_through_columns: []
   klaviyo__person_pass_through_columns: []
-
-# Databricks dispatch (as you already have)
-dispatch:
-  - macro_namespace: dbt_utils
-    search_order: ['spark_utils', 'dbt_utils']
 
 model-paths: ["models"]
 packages-install-path: "dbt_packages"
 
 models:
   +materialized: table
-  # This yields the schema `default_default_stg_klaviyo` by design (target_schema + `_stg_klaviyo`)
-  klaviyo_source_custom:
+  klaviyo_source:
     +schema: default_stg_klaviyo
 
