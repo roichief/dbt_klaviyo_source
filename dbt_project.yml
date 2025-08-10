@@ -1,30 +1,42 @@
-name: 'klaviyo_source_custom'
-profile: 'databricks' 
-version: '0.9.0'
+name: 'klaviyo_source'
+profile: 'databricks'
+version: '0.8.0'
 config-version: 2
-require-dbt-version: [">=1.0.0", "<2.0.0"]
+require-dbt-version: [">=1.3.0", "<2.0.0"]
 
-vars:
-  klaviyo_source:
-    klaviyo_database: 0006_wsg
-    klaviyo_schema: klaviyo_raw
-    klaviyo__event_pass_through_columns: []
-    klaviyo__person_pass_through_columns: []
-
-  dbt_utils_dispatch_list: ['spark_utils', 'dbt_utils']
-  fivetran_utils_dispatch_list: ['spark_utils']
-
+# Always resolve dbt_utils macros to spark_utils first on Databricks
 dispatch:
   - macro_namespace: dbt_utils
     search_order: ['spark_utils', 'dbt_utils']
+
+# Point the package at your real Airbyte landing tables
+vars:
+  # Databricks catalog + schema where Airbyte landed raw Klaviyo
+  klaviyo_database: 0006_wsg
+  klaviyo_schema: klaviyo_raw
+
+  # Map package-level identifiers to your actual table names
+  klaviyo_campaigns_identifier: campaigns
+  klaviyo_events_identifier: events
+  klaviyo_flows_identifier: flows
+  klaviyo_lists_identifier: lists
+  klaviyo_metrics_identifier: metrics
+  klaviyo_persons_identifier: profiles
+  klaviyo_global_exclusions_identifier: global_exclusions
+  # Extra tables you ALSO have (not always used by the package):
+  # klaviyo_campaigns_detailed_identifier: campaigns_detailed
+  # klaviyo_email_templates_identifier: email_templates
+
+  # Optional passthroughs (keep empty unless you need custom columns)
+  klaviyo__event_pass_through_columns: []
+  klaviyo__person_pass_through_columns: []
 
 model-paths: ["models"]
 packages-install-path: "dbt_packages"
 
 models:
+  # Write all staging models into this schema in the same catalog
+  klaviyo_source:
+    +schema: default_stg_klaviyo
   +materialized: table
-  +schema: stg_klaviyo
-  klaviyo_source_custom:
-    +schema: stg_klaviyo
-  klaviyo_source:  # Disable original Fivetran package
-    +enabled: false
+
