@@ -2,16 +2,18 @@ version: 2
 
 sources:
   - name: klaviyo_source
-    database: 0006_wsg # your catalog
-    schema: klaviyo_raw      # your Airbyte ingestion schema
+    database: "{{ var('klaviyo_database') }}"   # 0006_wsg
+    schema: "{{ var('klaviyo_schema') }}"       # klaviyo_raw
     tables:
       - name: campaigns
-        identifier: airbyte_campaigns
+        identifier: "{{ var('klaviyo_campaign_identifier', 'campaigns') }}"
       - name: events
-        identifier: airbyte_events
+        identifier: "{{ var('klaviyo_event_identifier', 'events') }}"
       - name: flows
-        identifier: airbyte_flows
-      - name: lists
-        identifier: airbyte_lists
+        identifier: "{{ var('klaviyo_flow_identifier', 'flows') }}"
       - name: metrics
-        identifier: airbyte_metrics
+        identifier: "{{ var('klaviyo_metric_identifier', 'metrics') }}"
+      - name: profiles          # <-- this was missing
+        identifier: "{{ var('klaviyo_person_identifier', 'profiles') }}"
+      - name: lists
+        identifier: "{{ var('klaviyo_list_identifier', 'lists') }}"
