@@ -10,7 +10,7 @@ parsed as (
     get_json_object(attributes, '$.integration.id')            as integration_id,
     get_json_object(attributes, '$.integration.name')          as integration_name,
     get_json_object(attributes, '$.integration.category')      as integration_category,
-    cast(_airbyte_extracted_at as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    cast(_fivetran_synced as {{ dbt.type_timestamp() }})       as _fivetran_synced,
     false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',

@@ -25,15 +25,16 @@ attrs as (
   from base
 ),
 messages as (
+  -- Parse and explode the first campaign message (if any)
   select
     a.id as campaign_id,
-    m.attributes.content.subject            as subject,
-    m.attributes.content.from_email         as from_email,
-    m.attributes.from_label                 as from_name,
-    m.relationships.template.data.id        as email_template_id,
+    msg.attributes.content.subject            as subject,
+    msg.attributes.content.from_email         as from_email,
+    msg.attributes.from_label                 as from_name,
+    msg.relationships.template.data.id        as email_template_id,
     try_to_timestamp(
-      element_at(transform(m.attributes.send_times, x -> x.datetime), 1)
-    )                                       as sent_at
+      element_at(transform(msg.attributes.send_times, x -> x.datetime), 1)
+    )                                         as sent_at
   from attrs a
   lateral view outer explode(
     from_json(
@@ -64,7 +65,7 @@ messages as (
          >
        >>'
     )
-  ) m
+  ) m as msg
 ),
 messages_dedup as (
   select *

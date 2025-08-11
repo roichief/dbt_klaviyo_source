@@ -10,7 +10,8 @@ parsed as (
     try_to_timestamp(get_json_object(attributes, '$.updated')) as updated,
     try_cast(get_json_object(attributes, '$.archived') as boolean) as archived,
     get_json_object(attributes, '$.trigger_type') as trigger_type,
-    cast(_airbyte_extracted_at as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    /* already present in _tmp */
+    cast(_fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
     false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',

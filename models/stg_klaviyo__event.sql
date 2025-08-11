@@ -29,7 +29,7 @@ parsed as (
       get_json_object(attributes, '$.event_properties.price'),
       get_json_object(attributes, '$.event_properties.amount')
     )                                                    as property_value,
-    cast(_airbyte_extracted_at as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    cast(_fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
     false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',

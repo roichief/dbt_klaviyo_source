@@ -22,7 +22,7 @@ parsed as (
     try_cast(get_json_object(attributes, '$.location.latitude')  as double) as latitude,
     try_cast(get_json_object(attributes, '$.location.longitude') as double) as longitude,
     get_json_object(attributes, '$.location.timezone')     as timezone,
-    cast(_airbyte_extracted_at as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    cast(_fivetran_synced as {{ dbt.type_timestamp() }})   as _fivetran_synced,
     false as _fivetran_deleted
     {{ fivetran_utils.source_relation(
          union_schema_variable   = 'klaviyo_union_schemas',
