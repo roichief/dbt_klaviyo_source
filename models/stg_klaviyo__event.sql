@@ -285,13 +285,13 @@ final as (
     cast(event_id as string)                                 as event_id,
     cast(metric_id as string)                                as metric_id,
     cast(person_id as string)                                as person_id,
-    type,
+    e.type,
     uuid,
     cast(regexp_replace(cast(property_value_raw as string), '[^0-9.]*', '') as decimal(28,6)) as numeric_value,
     _fivetran_synced,
-    source_relation,
+    e.source_relation as source_relation,                             -- << qualify
     cast(date_trunc('day', occurred_at) as date)             as occurred_on,
-    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(source_relation,'_null_'))) as unique_event_id,
+    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(e.source_relation,'_null_'))) as unique_event_id,  -- << qualify
 
     -- new appended columns
     c.campaign_name                                          as campaign_name,
@@ -302,7 +302,7 @@ final as (
         else null
       end,
       case
-        when lower(type) like '%sms%' then 'sms'
+        when lower(e.type) like '%sms%' then 'sms'
         else 'email'
       end
     )                                                        as campaign_type
