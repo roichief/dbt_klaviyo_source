@@ -1,99 +1,86 @@
--- models/stg_klaviyo__event.sql
+{{ config(materialized='table') }}
 
+-- Airbyte → parse JSON → expose columns expected by the Fivetran transforms.
 with base as (
   select * from {{ ref('stg_klaviyo__event_tmp') }}
 ),
 
 parsed as (
   select
-    id,
+    -- ids
+    cast(id as string) as id,
 
-    -- metric/profile ids (prefer Airbyte's extracted columns; fall back to JSON)
-    trim(
-      coalesce(
-        cast(metric_id as string),
-        get_json_object(relationships, '$.metric.data.id')
-      )
-    ) as metric_id,
-    trim(
-      coalesce(
-        cast(person_id as string),
-        get_json_object(relationships, '$.profile.data.id')
-      )
-    ) as person_id,
+    -- relationships (prefer normalized cols if present, else parse JSON)
+    coalesce(cast(metric_id as string), get_json_object(relationships, '$.metric.data.id'))  as metric_id,
+    coalesce(cast(person_id as string), get_json_object(relationships, '$.profile.data.id')) as person_id,
 
-    -- attributes
+    -- attributes (JSON)
     get_json_object(attributes, '$.uuid') as uuid,
 
-    try_to_timestamp(
-      from_unixtime(try_cast(get_json_object(attributes, '$.timestamp') as bigint))
-    ) as timestamp,
-    try_to_timestamp(get_json_object(attributes, '$.datetime')) as datetime,
+    -- occurred_at from epoch seconds OR ISO string OR the normalized column
+    coalesce(
+      try_to_timestamp(from_unixtime(try_cast(get_json_object(attributes, '$.timestamp') as bigint))),
+      try_to_timestamp(get_json_object(attributes, '$.datetime')),
+      cast(datetime as timestamp)
+    ) as occurred_at,
 
-    -- attribution-ish
-    get_json_object(attributes, '$.event_properties.$flow')    as flow_id,
-    get_json_object(attributes, '$.event_properties.$message') as flow_message_id,
+    -- attribution-ish fields from event_properties (when present)
+    get_json_object(attributes, '$.event_properties.$flow')     as flow_id,
+    get_json_object(attributes, '$.event_properties.$message')  as flow_message_id,
     coalesce(
       get_json_object(attributes, '$.event_properties.$campaign_id'),
       get_json_object(attributes, '$.event_properties.$campaign')
     ) as campaign_id,
 
-    -- variation
+    -- variation (optional)
     coalesce(
       get_json_object(attributes, '$.event_properties.$variation'),
       get_json_object(attributes, '$.event_properties.variation'),
       get_json_object(attributes, '$.event_properties._variation')
-    ) as _variation,
+    ) as variation_id,
 
-    -- numeric-ish value (string for now)
+    -- numeric-ish property (leave as string for numeric cleaning later)
     coalesce(
       get_json_object(attributes, '$.event_properties.$value'),
       get_json_object(attributes, '$.event_properties.value'),
       get_json_object(attributes, '$.event_properties.total'),
       get_json_object(attributes, '$.event_properties.price'),
       get_json_object(attributes, '$.event_properties.amount')
-    ) as property_value,
+    ) as property_value_raw,
 
     -- system / compat
-    cast(_fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    cast(_fivetran_synced as timestamp) as _fivetran_synced,
     false as _fivetran_deleted,
 
-    cast('' as {{ dbt.type_string() }}) as source_relation
+    -- union helper
+    cast(source_relation as string) as source_relation
   from base
 ),
 
-metrics as (
+rename as (
   select
-    trim(metric_id) as metric_id,
-    metric_name,
-    source_relation
-  from {{ ref('stg_klaviyo__metric') }}
-),
-
-joined as (
-  select
-    p._variation                                         as variation_id,
-    cast(p.campaign_id as {{ dbt.type_string() }})       as campaign_id,
-    cast(p.timestamp as {{ dbt.type_timestamp() }})       as occurred_at,
-    cast(p.flow_id as {{ dbt.type_string() }})            as flow_id,
+    p.variation_id,
+    cast(p.campaign_id as string)  as campaign_id,
+    cast(p.occurred_at as timestamp) as occurred_at,
+    cast(p.flow_id as string)      as flow_id,
     p.flow_message_id,
-    cast(p.id as {{ dbt.type_string() }})                 as event_id,
-    cast(p.metric_id as {{ dbt.type_string() }})          as metric_id,
-    cast(p.person_id as {{ dbt.type_string() }})          as person_id,
+    cast(p.id as string)           as event_id,
+    cast(p.metric_id as string)    as metric_id,
+    cast(p.person_id as string)    as person_id,
 
-    -- ← Fill type from the metric table
-    m.metric_name                                        as type,
+    -- fill event type from the metric dimension
+    m.metric_name                  as type,
 
     p.uuid,
 
-    -- clean numeric value
-    {{ klaviyo_source.remove_string_from_numeric('p.property_value') }} as numeric_value,
+    -- robust numeric parsing
+    cast(regexp_replace(cast(p.property_value_raw as string), '[^0-9.]*', '') as decimal(28,6)) as numeric_value,
 
-    cast(p._fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
+    p._fivetran_synced,
     p.source_relation
   from parsed p
-  left join metrics m
-    on trim(p.metric_id) = m.metric_id
+  left join {{ ref('stg_klaviyo__metric') }} m
+    on cast(p.metric_id as string) = m.metric_id
    and coalesce(p.source_relation, '') = coalesce(m.source_relation, '')
   where not coalesce(p._fivetran_deleted, false)
 ),
@@ -101,10 +88,18 @@ joined as (
 final as (
   select
     *,
-    cast({{ dbt.date_trunc('day', 'occurred_at') }} as date) as occurred_on,
-    {{ dbt_utils.generate_surrogate_key(['event_id', 'source_relation']) }} as unique_event_id
-  from joined
+    cast(date_trunc('day', occurred_at) as date) as occurred_on,
+    md5(
+      cast(
+        concat(
+          coalesce(cast(event_id as string), '_dbt_utils_surrogate_key_null_'),
+          '-',
+          coalesce(cast(source_relation as string), '_dbt_utils_surrogate_key_null_')
+        ) as string
+      )
+    ) as unique_event_id
+  from rename
 )
 
-select * from final
+select * from final;
 
