@@ -1,28 +1,22 @@
 {{ config(materialized='table') }}
 
 -- stg_klaviyo__event.sql
--- Inline campaign attribution (no separate helper model).
--- Safely appends campaign_name, campaign_subject, campaign_type.
+-- Break cycle by using only *_tmp for campaign enrichment (no ref to stg_klaviyo__campaign).
 
 with
-/* ------------------------------------------------------------------ */
-/* 0) RAW EVENTS                                                       */
-/* ------------------------------------------------------------------ */
+/* 0) RAW EVENTS ------------------------------------------------------ */
 base as (
   select * from {{ ref('stg_klaviyo__event_tmp') }}
 ),
 
-/* ------------------------------------------------------------------ */
-/* 1) INLINE message_id -> campaign_id map from campaign_tmp           */
-/*    (pulled from both relationships.campaign-messages and the        */
-/*     expanded campaign_messages array that includes channel/subject) */
-/* ------------------------------------------------------------------ */
+/* 1) Build message_id -> campaign_id map from stg_klaviyo__campaign_tmp */
 cmp_src as (
   select
     cast(id as string)                as campaign_id,
     cast(source_relation as string)   as source_relation,
     cast(relationships as string)     as relationships_json,
-    cast(campaign_messages as string) as campaign_messages_json
+    cast(campaign_messages as string) as campaign_messages_json,
+    cast(attributes as string)        as attributes_json
   from {{ ref('stg_klaviyo__campaign_tmp') }}
 ),
 
@@ -53,7 +47,7 @@ cmp_cm_msgs as (
     coalesce(
       cast(cm.attributes.content.subject as string),
       cast(cm.attributes.CONTENT.SUBJECT as string)
-    )                                                                              as message_subject
+    )                                                                               as message_subject
   from cmp_src s
   lateral view outer explode(
     from_json(
@@ -95,19 +89,28 @@ cmp_msg_map as (
   group by 1,2,3
 ),
 
-/* ------------------------------------------------------------------ */
-/* 2) CAMPAIGNS + CHANNEL PER CAMPAIGN                                */
-/* ------------------------------------------------------------------ */
-camp as (
+/* 2) Campaign attributes directly from *_tmp (NO ref to stg_klaviyo__campaign) */
+camp_base as (
   select
-    cast(campaign_id as string)             as campaign_id,
-    cast(source_relation as string)         as source_relation,
-    cast(campaign_name as string)           as campaign_name,
-    cast(subject as string)                 as campaign_subject,
-    cast(created_at as timestamp)           as created_at,
-    cast(scheduled_to_send_at as timestamp) as scheduled_to_send_at,
-    cast(sent_at as timestamp)              as sent_at
-  from {{ ref('stg_klaviyo__campaign') }}
+    campaign_id,
+    source_relation,
+    get_json_object(attributes_json, '$.name')                                        as campaign_name,
+    try_to_timestamp(get_json_object(attributes_json, '$.created_at'))               as created_at,
+    coalesce(
+      try_to_timestamp(get_json_object(attributes_json, '$.scheduled_at')),
+      try_to_timestamp(get_json_object(attributes_json, '$.send_strategy.options_static.datetime'))
+    )                                                                                as scheduled_to_send_at,
+    try_to_timestamp(get_json_object(attributes_json, '$.send_time'))                as sent_at
+  from cmp_src
+),
+
+camp_subject as (
+  select
+    campaign_id,
+    source_relation,
+    max(message_subject) as campaign_subject
+  from cmp_msg_map
+  group by 1,2
 ),
 
 camp_channel as (
@@ -120,20 +123,31 @@ camp_channel as (
   group by 1,2
 ),
 
-/* ------------------------------------------------------------------ */
-/* 3) METRIC NAMES (unchanged)                                        */
-/* ------------------------------------------------------------------ */
+camp as (
+  select
+    b.campaign_id,
+    b.source_relation,
+    b.campaign_name,
+    s.campaign_subject,
+    b.created_at,
+    b.scheduled_to_send_at,
+    b.sent_at
+  from camp_base b
+  left join camp_subject s
+    on b.campaign_id = s.campaign_id
+   and coalesce(b.source_relation,'') = coalesce(s.source_relation,'')
+),
+
+/* 3) Metric names (safe; does not depend on events) */
 metric as (
   select
-    cast(metric_id as string)  as metric_id,
-    cast(metric_name as string) as metric_name,
+    cast(metric_id as string)       as metric_id,
+    cast(metric_name as string)     as metric_name,
     cast(source_relation as string) as source_relation
   from {{ ref('stg_klaviyo__metric') }}
 ),
 
-/* ------------------------------------------------------------------ */
-/* 4) PARSE EVENTS (robust token extraction, no breaking changes)      */
-/* ------------------------------------------------------------------ */
+/* 4) Parse events */
 parsed as (
   select
     cast(id as string)                                   as event_id,
@@ -148,7 +162,7 @@ parsed as (
 
     get_json_object(attributes, '$.uuid')                as uuid,
 
-    -- flow identifier (keep campaign null if flow present)
+    -- flow identifier
     coalesce(
       get_json_object(attributes, '$.event_properties.$flow'),
       get_json_object(attributes, '$.event_properties.$flow_id'),
@@ -159,7 +173,7 @@ parsed as (
       get_json_object(attributes, '$.flow')
     )                                                    as flow_id,
 
-    -- message token: sometimes a message_id, sometimes actually the campaign_id
+    -- message token (message_id OR sometimes campaign_id)
     coalesce(
       get_json_object(attributes, '$.event_properties.$message'),
       get_json_object(attributes, '$.event_properties.$message_interaction'),
@@ -184,7 +198,7 @@ parsed as (
       get_json_object(attributes, '$.campaign')
     )                                                    as campaign_id_direct,
 
-    -- fallbacks used for matching
+    -- fallbacks
     get_json_object(attributes, '$.event_properties.Subject')                 as subject_raw,
     get_json_object(attributes, '$.event_properties["Campaign Name"]')       as campaign_name_raw,
 
@@ -206,9 +220,7 @@ parsed as (
   from base
 ),
 
-/* ------------------------------------------------------------------ */
-/* 5) ENRICH + DERIVE campaign_id for NON-FLOW events                  */
-/* ------------------------------------------------------------------ */
+/* 5) Enrich + derive campaign_id for non-flow events */
 enriched as (
   select
     p.*,
@@ -220,7 +232,7 @@ enriched as (
         -- 0) explicit campaign id
         p.campaign_id_direct,
 
-        -- 1) $message -> campaign_message -> campaign
+        -- 1) message_id -> campaign_id lookup
         (select mm.campaign_id
            from cmp_msg_map mm
           where mm.message_id = p.message_token
@@ -228,7 +240,7 @@ enriched as (
           limit 1
         ),
 
-        -- 2) $message is actually a campaign_id (observed in your samples)
+        -- 2) message token is actually a campaign_id
         (select c.campaign_id
            from camp c
           where c.campaign_id = p.message_token
@@ -249,8 +261,8 @@ enriched as (
            from camp c
           where coalesce(c.campaign_subject,'') = coalesce(p.subject_raw,'')
             and coalesce(c.source_relation,'') = coalesce(p.source_relation,'')
-            and p.occurred_at between coalesce(c.sent_at, c.scheduled_to_send_at, c.created_at) - interval 7 days
-                                 and coalesce(c.sent_at, c.scheduled_to_send_at, c.created_at) + interval 7 days
+            and p.occurred_at between coalesce(c.sent_at, c.scheduled_to_send_at, c.created_at) - INTERVAL 7 DAYS
+                                 and coalesce(c.sent_at, c.scheduled_to_send_at, c.created_at) + INTERVAL 7 DAYS
           limit 1
         )
       )
@@ -261,12 +273,10 @@ enriched as (
    and coalesce(p.source_relation,'') = coalesce(m.source_relation,'')
 ),
 
-/* ------------------------------------------------------------------ */
-/* 6) FINAL SHAPE (existing cols unchanged + appended campaign attrs)  */
-/* ------------------------------------------------------------------ */
+/* 6) Final shape */
 final as (
   select
-    -- Existing columns (preserved)
+    -- existing columns
     cast(null as string)                                     as variation_id,
     cast(derived_campaign_id as string)                      as campaign_id,
     cast(occurred_at as timestamp)                           as occurred_at,
@@ -283,7 +293,7 @@ final as (
     cast(date_trunc('day', occurred_at) as date)             as occurred_on,
     md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(source_relation,'_null_'))) as unique_event_id,
 
-    -- New appended columns (safe to add)
+    -- new appended columns
     c.campaign_name                                          as campaign_name,
     c.campaign_subject                                       as campaign_subject,
     coalesce(
