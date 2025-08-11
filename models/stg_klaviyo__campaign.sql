@@ -7,52 +7,49 @@ with base as (
 
 attrs as (
   select
-    -- ids
     id,
 
-    -- attributes (JSON string on the Airbyte row)
-    get_json_object(attributes, '$.name')          as name,
-    lower(get_json_object(attributes, '$.status')) as status,
-    get_json_object(attributes, '$.send_time')     as send_time,   -- string ISO
-    get_json_object(attributes, '$.archived')      as archived,
-    get_json_object(attributes, '$.scheduled_at')  as scheduled,
+    -- JSON attributes on the Airbyte row
+    get_json_object(attributes, '$.name')           as name,
+    lower(get_json_object(attributes, '$.status'))  as status,
+    get_json_object(attributes, '$.send_time')      as send_time,     -- ISO string
+    get_json_object(attributes, '$.archived')       as archived,
+    get_json_object(attributes, '$.scheduled_at')   as scheduled,
 
-    -- normalized timestamps carried from _tmp (already cast to timestamp there)
+    -- normalized timestamps / extras carried from _tmp
     created,
     updated,
-
-    -- extras carried from _tmp
     estimated_recipient_count,
     campaign_messages,
 
-    -- lineage/system from _tmp
-    cast(_fivetran_synced as timestamp) as _fivetran_synced,
+    -- lineage / system
+    cast(_fivetran_synced as {{ dbt.type_timestamp() }}) as _fivetran_synced,
     _airbyte_raw_id,
     _airbyte_meta,
     _airbyte_generation_id,
 
-    -- Airbyte has no soft deletes; keep a compat column for downstream logic
+    -- compat soft-delete flag (Airbyte doesn't soft-delete)
     false as _fivetran_deleted,
 
-    -- keep for unioning compatibility with fivetran_utils.source_relation()
-    cast('' as string) as source_relation
+    -- compat with fivetran_utils.source_relation()
+    cast('' as {{ dbt.type_string() }}) as source_relation
   from base
 ),
 
-/* Parse and explode campaign_messages (first message only when present) */
+/* Parse and explode campaign_messages (first message only, if any) */
 messages as (
   select
     a.id as campaign_id,
 
-    -- nested fields from the parsed struct
-    msg.attributes.content.subject       as subject,
-    msg.attributes.content.from_email    as from_email,
-    msg.attributes.content.from_label    as from_name,
-    msg.relationships.template.data.id   as email_template_id,
+    -- NOTE: we alias the exploded column as `msg`, so we can reference msg.attributes...
+    msg.attributes.content.subject        as subject,
+    msg.attributes.content.from_email     as from_email,
+    msg.attributes.content.from_label     as from_name,
+    msg.relationships.template.data.id    as email_template_id,
 
-    -- handle empty/missing arrays safely
+    -- tolerate empty/missing arrays using `get(...)`
     try_to_timestamp(
-      try_element_at(transform(msg.attributes.send_times, x -> x.datetime), 1)
+      get(transform(msg.attributes.send_times, x -> x.datetime), 1)
     ) as sent_at
 
   from attrs a
@@ -85,10 +82,10 @@ messages as (
         >
       >>'
     )
-  ) msg
+  ) lv as msg
 ),
 
--- if multiple messages exist, keep the first deterministically
+-- If multiple messages exist, keep a single deterministic row
 messages_dedup as (
   select *
   from (
@@ -104,24 +101,24 @@ messages_dedup as (
 )
 
 select
-  -- optional Fivetran fields (not present in Airbyte payloads)
-  cast(null as {{ dbt.type_string() }})             as campaign_type,
+  -- optional Fivetran fields
+  cast(null as {{ dbt.type_string() }})               as campaign_type,
 
   -- mapped / normalized fields
-  cast(a.created as {{ dbt.type_timestamp() }})     as created_at,
+  cast(a.created as {{ dbt.type_timestamp() }})       as created_at,
   md.email_template_id,
   md.from_email,
   md.from_name,
-  cast(a.id as {{ dbt.type_string() }})             as campaign_id,
-  a.name                                            as campaign_name,
-  a.send_time                                       as scheduled_to_send_at, -- keep string ISO if present
+  cast(a.id as {{ dbt.type_string() }})               as campaign_id,
+  a.name                                              as campaign_name,
+  a.send_time                                         as scheduled_to_send_at, -- keep as string if present
   md.sent_at,
-  a.status                                          as status,
-  cast(null as {{ dbt.type_string() }})             as status_id,
+  a.status                                            as status,
+  cast(null as {{ dbt.type_string() }})               as status_id,
   md.subject,
-  cast(a.updated as {{ dbt.type_timestamp() }})     as updated_at,
-  try_cast(a.archived as boolean)                   as is_archived,
-  a.scheduled                                       as scheduled_at,
+  cast(a.updated as {{ dbt.type_timestamp() }})       as updated_at,
+  try_cast(a.archived as boolean)                     as is_archived,
+  a.scheduled                                         as scheduled_at,
 
   -- passthrough for unioning
   a.source_relation
