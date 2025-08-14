@@ -94,13 +94,13 @@ camp_base as (
   select
     campaign_id,
     source_relation,
-    get_json_object(attributes_json, '$.name')                                        as campaign_name,
-    try_to_timestamp(get_json_object(attributes_json, '$.created_at'))               as created_at,
+    get_json_object(attributes_json, '$.name')                          as campaign_name,
+    try_to_timestamp(get_json_object(attributes_json, '$.created_at'))  as created_at,
     coalesce(
       try_to_timestamp(get_json_object(attributes_json, '$.scheduled_at')),
       try_to_timestamp(get_json_object(attributes_json, '$.send_strategy.options_static.datetime'))
-    )                                                                                as scheduled_to_send_at,
-    try_to_timestamp(get_json_object(attributes_json, '$.send_time'))                as sent_at
+    )                                                                   as scheduled_to_send_at,
+    try_to_timestamp(get_json_object(attributes_json, '$.send_time'))   as sent_at
   from cmp_src
 ),
 
@@ -138,7 +138,7 @@ camp as (
    and coalesce(b.source_relation,'') = coalesce(s.source_relation,'')
 ),
 
-/* 3) Metric names (safe; does not depend on events) */
+/* 3) Metric names */
 metric as (
   select
     cast(metric_id as string)       as metric_id,
@@ -215,6 +215,16 @@ parsed as (
       get_json_object(attributes, '$.properties.amount')
     )                                                    as property_value_raw,
 
+    -- NEW: extract variation_id
+    coalesce(
+      get_json_object(attributes, '$.event_properties.$variation'),
+      get_json_object(attributes, '$.event_properties.$variation_id'),
+      get_json_object(attributes, '$.properties.$variation'),
+      get_json_object(attributes, '$.properties.$variation_id'),
+      get_json_object(attributes, '$.variation'),
+      get_json_object(attributes, '$.message.variation_id')
+    )                                                    as variation_id_raw,
+
     cast(_fivetran_synced as timestamp)                  as _fivetran_synced,
     cast(source_relation as string)                      as source_relation
   from base
@@ -273,41 +283,69 @@ enriched as (
    and coalesce(p.source_relation,'') = coalesce(m.source_relation,'')
 ),
 
-/* 6) Final shape */
+/* 6) Canonicalize event type (for pivoting downstream) */
+typed as (
+  select
+    e.*,
+
+    case
+      /* EMAIL unsubscribes to roll up */
+      when lower(e.type) in (
+        'unsubscribed from email marketing',
+        'unsubscribed from list',
+        'manually suppressed from email marketing'
+      ) then 'Unsubscribed'
+
+      /* SMS unsubscribes to roll up (exclude transactional by default) */
+      when lower(e.type) in ('unsubscribed from sms marketing')
+        then 'Unsubscribed from SMS'
+
+      /* clicking an unsubscribe link is still a Click, not an Unsub */
+      when lower(e.type) = 'clicked email to unsubscribe' then 'Clicked Email'
+
+      /* leave everything else as-is (includes Viewed Product, etc.) */
+      else e.type
+    end as type_canonical
+  from enriched e
+),
+
+/* 7) Final shape */
 final as (
   select
-    -- existing columns
-    cast(null as string)                                     as variation_id,
-    cast(derived_campaign_id as string)                      as campaign_id,
-    cast(occurred_at as timestamp)                           as occurred_at,
-    cast(flow_id as string)                                  as flow_id,
-    cast(message_token as string)                            as flow_message_id,
-    cast(event_id as string)                                 as event_id,
-    cast(metric_id as string)                                as metric_id,
-    cast(person_id as string)                                as person_id,
-    e.type,
+    -- now with real variation_id
+    cast(variation_id_raw as string)                        as variation_id,
+    cast(derived_campaign_id as string)                     as campaign_id,
+    cast(occurred_at as timestamp)                          as occurred_at,
+    cast(flow_id as string)                                 as flow_id,
+    cast(message_token as string)                           as flow_message_id,
+    cast(event_id as string)                                as event_id,
+    cast(metric_id as string)                               as metric_id,
+    cast(person_id as string)                               as person_id,
+    type,                                                   -- original metric name
+    type_canonical,                                         -- NEW canonical type
     uuid,
     cast(regexp_replace(cast(property_value_raw as string), '[^0-9.]*', '') as decimal(28,6)) as numeric_value,
     _fivetran_synced,
-    e.source_relation as source_relation,                             -- << qualify
-    cast(date_trunc('day', occurred_at) as date)             as occurred_on,
-    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(e.source_relation,'_null_'))) as unique_event_id,  -- << qualify
+    source_relation,
+    cast(date_trunc('day', occurred_at) as date)            as occurred_on,
+    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(source_relation,'_null_'))) as unique_event_id,
 
-    -- new appended columns
-    c.campaign_name                                          as campaign_name,
-    c.campaign_subject                                       as campaign_subject,
+    -- campaign enrichments
+    c.campaign_name                                         as campaign_name,
+    c.campaign_subject                                      as campaign_subject,
+
     coalesce(
       case
         when ch.campaign_channel in ('email','sms') then ch.campaign_channel
         else null
       end,
       case
-        when lower(e.type) like '%sms%' then 'sms'
+        when lower(type) like '%sms%' then 'sms'
         else 'email'
       end
-    )                                                        as campaign_type
+    )                                                       as campaign_type
 
-  from enriched e
+  from typed e
   left join camp c
     on e.derived_campaign_id = c.campaign_id
    and coalesce(e.source_relation,'') = coalesce(c.source_relation,'')
