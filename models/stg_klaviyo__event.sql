@@ -315,9 +315,9 @@ final as (
     uuid,
     cast(regexp_replace(cast(property_value_raw as string), '[^0-9.]*', '') as decimal(28,6)) as numeric_value,
     _fivetran_synced,
-    source_relation,
+    e.source_relation as source_relation,                    -- << qualify to avoid ambiguity
     cast(date_trunc('day', occurred_at) as date)            as occurred_on,
-    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(source_relation,'_null_'))) as unique_event_id,
+    md5(concat_ws('-', coalesce(event_id,'_null_'), coalesce(e.source_relation,'_null_'))) as unique_event_id, -- << qualify
 
     -- campaign enrichments
     c.campaign_name                                         as campaign_name,
@@ -325,7 +325,7 @@ final as (
 
     coalesce(
       case when ch.campaign_channel in ('email','sms') then ch.campaign_channel end,
-      case when lower(type) like '%sms%' then 'sms' else 'email' end
+      case when lower(e.type) like '%sms%' then 'sms' else 'email' end                 -- << qualify type
     ) as campaign_type
 
   from typed e
