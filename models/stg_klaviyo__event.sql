@@ -239,34 +239,25 @@ enriched as (
     case
       when p.flow_id is not null then null
       else coalesce(
-        -- 0) explicit campaign id
         p.campaign_id_direct,
-
-        -- 1) message_id -> campaign_id lookup
         (select mm.campaign_id
            from cmp_msg_map mm
           where mm.message_id = p.message_token
             and coalesce(mm.source_relation,'') = coalesce(p.source_relation,'')
           limit 1
         ),
-
-        -- 2) message token is actually a campaign_id
         (select c.campaign_id
            from camp c
           where c.campaign_id = p.message_token
             and coalesce(c.source_relation,'') = coalesce(p.source_relation,'')
           limit 1
         ),
-
-        -- 3) fallback by campaign name
         (select c.campaign_id
            from camp c
           where coalesce(c.campaign_name,'') = coalesce(p.campaign_name_raw,'')
             and coalesce(c.source_relation,'') = coalesce(p.source_relation,'')
           limit 1
         ),
-
-        -- 4) fallback by subject within ±7 days of send/scheduled
         (select c.campaign_id
            from camp c
           where coalesce(c.campaign_subject,'') = coalesce(p.subject_raw,'')
@@ -297,13 +288,12 @@ typed as (
       ) then 'Unsubscribed'
 
       /* SMS unsubscribes to roll up (exclude transactional by default) */
-      when lower(e.type) in ('unsubscribed from sms marketing')
-        then 'Unsubscribed from SMS'
+      when lower(e.type) in ('unsubscribed from sms marketing') then 'Unsubscribed from SMS'
 
       /* clicking an unsubscribe link is still a Click, not an Unsub */
       when lower(e.type) = 'clicked email to unsubscribe' then 'Clicked Email'
 
-      /* leave everything else as-is (includes Viewed Product, etc.) */
+      /* everything else unchanged */
       else e.type
     end as type_canonical
   from enriched e
@@ -312,7 +302,6 @@ typed as (
 /* 7) Final shape */
 final as (
   select
-    -- now with real variation_id
     cast(variation_id_raw as string)                        as variation_id,
     cast(derived_campaign_id as string)                     as campaign_id,
     cast(occurred_at as timestamp)                          as occurred_at,
@@ -321,8 +310,8 @@ final as (
     cast(event_id as string)                                as event_id,
     cast(metric_id as string)                               as metric_id,
     cast(person_id as string)                               as person_id,
-    type,                                                   -- original metric name
-    type_canonical,                                         -- NEW canonical type
+    type,                   -- original metric name
+    type_canonical,         -- NEW canonical type
     uuid,
     cast(regexp_replace(cast(property_value_raw as string), '[^0-9.]*', '') as decimal(28,6)) as numeric_value,
     _fivetran_synced,
@@ -335,15 +324,9 @@ final as (
     c.campaign_subject                                      as campaign_subject,
 
     coalesce(
-      case
-        when ch.campaign_channel in ('email','sms') then ch.campaign_channel
-        else null
-      end,
-      case
-        when lower(type) like '%sms%' then 'sms'
-        else 'email'
-      end
-    )                                                       as campaign_type
+      case when ch.campaign_channel in ('email','sms') then ch.campaign_channel end,
+      case when lower(type) like '%sms%' then 'sms' else 'email' end
+    ) as campaign_type
 
   from typed e
   left join camp c
