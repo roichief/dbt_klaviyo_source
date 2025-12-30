@@ -42,12 +42,16 @@ packages:
     version: [">=0.8.0", "<0.9.0"]
 ```
 ### Step 3: Define database and schema variables
-By default, this package runs using your destination and the `klaviyo` schema. If this is not where your Klaviyo data is (for example, if your Klaviyo schema is named `klaviyo_fivetran`), add the following configuration to your root `dbt_project.yml` file:
+By default, this package now points at a compatibility layer built from Airbyte's Klaviyo connector. The included models read JSON payloads from the `klaviyo_raw` schema and flatten them into Fivetran-shaped tables in the `klaviyo_airbyte_compat` schema. If your Klaviyo data lives elsewhere (for example, if your Klaviyo schema is named `klaviyo_fivetran`), add the following configuration to your root `dbt_project.yml` file:
 
 ```yml
 vars:
     klaviyo_database: your_database_name
-    klaviyo_schema: your_schema_name 
+    klaviyo_schema: your_schema_name
+    klaviyo_airbyte_raw_database: your_raw_airbyte_database
+    klaviyo_airbyte_raw_schema: your_raw_airbyte_schema
+    klaviyo_airbyte_compat_database: your_compat_database
+    klaviyo_airbyte_compat_schema: your_compat_schema
 ```
 ### (Optional) Step 4: Additional configurations
 <details><summary>Expand for configurations</summary>

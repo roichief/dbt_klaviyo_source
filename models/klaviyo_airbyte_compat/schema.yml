@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: campaign
+    description: Flattened Klaviyo campaign data from Airbyte raw JSON for compatibility with Fivetran models.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [id]
+    columns:
+      - name: id
+        tests: [not_null]
+
+  - name: event
+    description: Flattened Klaviyo events derived from Airbyte raw payloads.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [event_id]
+    columns:
+      - name: event_id
+        tests: [not_null]
+      - name: metric_id
+        tests: [not_null]
+      - name: person_id
+        tests: [not_null]
+
+  - name: flow
+    description: Flattened Klaviyo flows derived from Airbyte raw payloads.
+    columns:
+      - name: id
+        tests: [not_null]
+
+  - name: metric
+    description: Flattened Klaviyo metrics derived from Airbyte raw payloads.
+    columns:
+      - name: id
+        tests: [not_null]
+
+  - name: person
+    description: Flattened Klaviyo person/profile records derived from Airbyte raw payloads.
+    columns:
+      - name: id
+        tests: [not_null]
