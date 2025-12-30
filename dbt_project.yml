@@ -4,6 +4,14 @@ config-version: 2
 require-dbt-version: [">=1.0.0", "<2.0.0"]
 
 vars:
+  klaviyo_airbyte_raw_database: "0006_wsg"
+  klaviyo_airbyte_raw_schema: "klaviyo_raw"
+  klaviyo_airbyte_compat_database: "{{ var('klaviyo_airbyte_raw_database', target.database) }}"
+  klaviyo_airbyte_compat_schema: "klaviyo_airbyte_compat"
+
+  klaviyo_database: "{{ var('klaviyo_airbyte_compat_database', target.database) }}"
+  klaviyo_schema: "{{ var('klaviyo_airbyte_compat_schema', 'klaviyo_airbyte_compat') }}"
+
   klaviyo_source:
     event_table: "{{ source('klaviyo', 'event') }}"
     campaign: "{{ source('klaviyo', 'campaign') }}"
@@ -23,4 +31,7 @@ models:
       +materialized: view
     +materialized: table
     +schema: stg_klaviyo
+    klaviyo_airbyte_compat:
+      +schema: "{{ var('klaviyo_airbyte_compat_schema', 'klaviyo_airbyte_compat') }}"
+      +database: "{{ var('klaviyo_airbyte_compat_database', target.database) }}"
 
